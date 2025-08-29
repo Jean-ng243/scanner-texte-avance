@@ -15,9 +15,12 @@ class ImageAnnotator:
         self.text_color = (0, 255, 0)  # Vert pour le texte détecté
         self.hidden_color = (255, 255, 0)  # Jaune pour le texte caché
         
-    def create_annotated_image(self, original_image_path, analysis_results):
+    def create_annotated_image(self, original_image_path, analysis_results, restored_images=None):
         """
-        Crée une image annotée avec les résultats d'analyse
+        Crée une image annotée avec les résultats d'analyse et les images restaurées.
+        :param original_image_path: Chemin vers l'image originale.
+        :param analysis_results: Dictionnaire des résultats d'analyse.
+        :param restored_images: Dictionnaire des chemins vers les images restaurées (optionnel).
         """
         try:
             # Charger l'image originale
@@ -47,6 +50,10 @@ class ImageAnnotator:
             # Ajouter les annotations basées sur les résultats d'analyse
             self._add_text_annotations(draw, analysis_results, width, height, font, small_font)
             self._add_analysis_overlay(draw, analysis_results, width, height, font, small_font)
+
+            # Ajouter les images restaurées si fournies
+            if restored_images:
+                self._add_restored_images_overlay(annotated_image, restored_images, width, height)
             
             # Sauvegarder l'image annotée
             temp_dir = tempfile.mkdtemp()
@@ -58,6 +65,46 @@ class ImageAnnotator:
         except Exception as e:
             print(f"Erreur lors de la création de l'image annotée: {e}")
             return None, None
+
+    def _add_restored_images_overlay(self, annotated_image, restored_images, img_width, img_height):
+        """
+        Ajoute les images restaurées comme des petites vignettes ou un aperçu sur l'image annotée.
+        """
+        draw = ImageDraw.Draw(annotated_image)
+        small_font = ImageFont.load_default() # Utiliser une police par défaut si arial.ttf n'est pas dispo
+        try:
+            small_font = ImageFont.truetype("arial.ttf", 12)
+        except IOError:
+            pass
+
+        x_offset = 10
+        y_offset = 10
+        thumbnail_size = (100, 50)
+
+        for label, path in restored_images.items():
+            if path and os.path.exists(path):
+                try:
+                    restored_img = Image.open(path)
+                    restored_img.thumbnail(thumbnail_size)
+                    
+                    # Positionner la vignette
+                    # Pour l'exemple, plaçons-les en haut à droite, empilées verticalement
+                    pos_x = img_width - thumbnail_size[0] - x_offset
+                    pos_y = y_offset
+
+                    # Dessiner un cadre autour de la vignette
+                    draw.rectangle([pos_x - 2, pos_y - 2, pos_x + thumbnail_size[0] + 2, pos_y + thumbnail_size[1] + 2], outline=(255, 255, 255), width=2)
+                    annotated_image.paste(restored_img, (pos_x, pos_y))
+
+                    # Ajouter un label
+                    text_label = label.replace("deblurred_", "Déflouté ").replace("restored_", "Restauré ").replace("_wiener", " (Wiener)").replace("_rl", " (RL)").replace("_erased", " (Effacé)")
+                    draw.text((pos_x, pos_y + thumbnail_size[1] + 5), text_label, fill=(255, 255, 255), font=small_font)
+
+                    y_offset += thumbnail_size[1] + 30 # Espacement pour la prochaine vignette
+
+                except Exception as e:
+                    print(f"Erreur lors de l'ajout de la vignette {label}: {e}")
+
     
     def _add_text_annotations(self, draw, analysis_results, width, height, font, small_font):
         """
@@ -191,8 +238,14 @@ def generate_annotated_results(original_image_path, analysis_results):
     """
     annotator = ImageAnnotator()
     
+    restored_images = {}
+    if "restoration" in analysis_results["analysis"] and analysis_results["analysis"]["restoration"]["status"] == "Succès":
+        restored_images["deblurred_wiener"] = analysis_results["analysis"]["restoration"].get("deblurred_wiener_path")
+        restored_images["deblurred_rl"] = analysis_results["analysis"]["restoration"].get("deblurred_rl_path")
+        restored_images["restored_erased"] = analysis_results["analysis"]["restoration"].get("restored_erased_path")
+
     # Créer l'image annotée
-    annotated_path, temp_dir1 = annotator.create_annotated_image(original_image_path, analysis_results)
+    annotated_path, temp_dir1 = annotator.create_annotated_image(original_image_path, analysis_results, restored_images)
     
     if annotated_path:
         # Créer l'image de comparaison

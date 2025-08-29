@@ -18,6 +18,7 @@ try:
     from spectral_analysis import simulated_spectral_analysis
     from texture_pressure_analysis import analyze_texture_pressure
     from image_annotator import generate_annotated_results
+    from restoration_module import deblur_image_wiener, deblur_image_richardson_lucy, simulate_erased_text_restoration
 except ImportError as e:
     print(f"Erreur d'importation des modules d'analyse: {e}")
     # Fallback functions if modules are not available
@@ -227,35 +228,70 @@ def analyze_document(image_path):
         try:
             texture_results = analyze_texture_pressure(image_path)
             if texture_results:
-                results['analysis']['texture_pressure'] = {
-                    'status': 'Succès',
-                    'description': 'Détection de variations de pression sur le papier',
-                    'maps_generated': len(texture_results) if isinstance(texture_results, dict) else 1
+                results["analysis"]["texture_pressure"] = {
+                    "status": "Succès",
+                    "description": "Détection de variations de pression sur le papier",
+                    "maps_generated": len(texture_results) if isinstance(texture_results, dict) else 1
                 }
             else:
-                results['analysis']['texture_pressure'] = {
-                    'status': 'Aucune variation de texture détectée'
+                results["analysis"]["texture_pressure"] = {
+                    "status": "Aucune variation de texture détectée"
                 }
         except Exception as e:
-            results['analysis']['texture_pressure'] = {
-                'status': f'Erreur: {str(e)}'
+            results["analysis"]["texture_pressure"] = {
+                "status": f"Erreur: {str(e)}"
             }
-        
-        # 5. Calcul de la confiance globale
-        successful_analyses = sum(1 for analysis in results['analysis'].values() 
-                                if isinstance(analysis, dict) and analysis.get('status') == 'Succès')
-        total_analyses = len(results['analysis'])
+
+        # 5. Restauration avancée (texte flou/effacé)
+        try:
+            # Pour la déconvolution, nous avons besoin d'une PSF. Ici, nous utilisons une PSF générique.
+            # Dans un cas réel, la PSF devrait être estimée à partir de l'image ou connue.
+            psf = np.ones((5, 5)) / 25.0 # Exemple de PSF pour un flou de mouvement simple
+
+            # Défloutage avec Wiener
+            deblurred_wiener_img = deblur_image_wiener(image_path, psf)
+            deblurred_wiener_path = os.path.join(tempfile.gettempdir(), os.path.basename(image_path).replace(".", "_deblurred_wiener."))
+            deblurred_wiener_img.save(deblurred_wiener_path)
+
+            # Défloutage avec Richardson-Lucy
+            deblurred_rl_img = deblur_image_richardson_lucy(image_path, psf)
+            deblurred_rl_path = os.path.join(tempfile.gettempdir(), os.path.basename(image_path).replace(".", "_deblurred_rl."))
+            deblurred_rl_img.save(deblurred_rl_path)
+
+            # Restauration de texte effacé simulé
+            restored_erased_img = simulate_erased_text_restoration(image_path)
+            restored_erased_path = os.path.join(tempfile.gettempdir(), os.path.basename(image_path).replace(".", "_restored_erased."))
+            restored_erased_img.save(restored_erased_path)
+
+            results["analysis"]["restoration"] = {
+                "status": "Succès",
+                "description": "Images restaurées générées",
+                "deblurred_wiener_path": deblurred_wiener_path,
+                "deblurred_rl_path": deblurred_rl_path,
+                "restored_erased_path": restored_erased_path
+            }
+        except Exception as e:
+            results["analysis"]["restoration"] = {
+                "status": f"Erreur: {str(e)}",
+                "description": "Échec de la restauration des images"
+            }
+
+        # 6. Calcul de la confiance globale
+        successful_analyses = sum(1 for analysis in results["analysis"].values() 
+                                if isinstance(analysis, dict) and analysis.get("status") == "Succès")
+        total_analyses = len(results["analysis"])
         confidence = int((successful_analyses / total_analyses) * 100) if total_analyses > 0 else 0
         
-        results['confidence'] = confidence
-        results['layers_detected'] = min(3, successful_analyses)  # Simulation du nombre de couches
+        results["confidence"] = confidence
+        results["layers_detected"] = min(3, successful_analyses)  # Simulation du nombre de couches
         
-        # 6. Génération des résultats finaux
-        results['final_results'] = {
-            'original_text': extract_main_text(results['analysis'].get('ocr', {}).get('text', '')),
-            'hidden_text': extract_hidden_text(results['analysis'].get('ocr', {}).get('text', '')),
-            'spectral_analysis': results['analysis'].get('spectral', {}).get('description', 'Non disponible'),
-            'pressure_analysis': results['analysis'].get('texture_pressure', {}).get('description', 'Non disponible')
+        # 7. Génération des résultats finaux
+        results["final_results"] = {
+            "original_text": extract_main_text(results["analysis"].get("ocr", {}).get("text", "")),
+            "hidden_text": extract_hidden_text(results["analysis"].get("ocr", {}).get("text", "")),
+            "spectral_analysis": results["analysis"].get("spectral", {}).get("description", "Non disponible"),
+            "pressure_analysis": results["analysis"].get("texture_pressure", {}).get("description", "Non disponible"),
+            "restoration_status": results["analysis"].get("restoration", {}).get("description", "Non disponible")
         }
         
         return results
