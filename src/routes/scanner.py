@@ -339,3 +339,30 @@ def health_check():
         'version': '1.0.0'
     })
 
+
+
+@scanner_bp.route("/process_crypto_payment", methods=["POST"])
+def process_crypto_payment():
+    """
+    Simule le traitement d'un paiement en crypto-monnaie.
+    Dans une application réelle, cela impliquerait l'intégration avec une passerelle de paiement crypto.
+    """
+    try:
+        # Ici, nous simulerons simplement un paiement réussi.
+        # En réalité, vous vérifieriez la transaction avec la passerelle de paiement.
+        data = request.get_json()
+        amount = data.get("amount")
+        currency = data.get("currency")
+
+        if not amount or not currency:
+            return jsonify({"status": "error", "message": "Montant et devise requis"}), 400
+
+        # Simulation d'un traitement de paiement réussi
+        print(f"Paiement simulé reçu: {amount} {currency}")
+
+        return jsonify({"status": "success", "message": "Paiement crypto simulé réussi. Accès premium activé."})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Erreur lors du traitement du paiement crypto: {str(e)}"}), 500
+
+
